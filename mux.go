@@ -7,84 +7,105 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-func NewMessageMux[P constraints.Ordered, Message any](getPattern func(Message) (P, error)) *MessageMux[P, Message] {
-	return &MessageMux[P, Message]{
-		getPattern:       getPattern,
-		handlerByPattern: make(map[P]MessageFunc[Message]),
+type MessageHandler[Message any] func(dto Message) error
+
+type MessageDecorator[Message any] func(next MessageHandler[Message]) MessageHandler[Message]
+
+func LinkMiddlewares[Message any](handler MessageHandler[Message], middlewares ...MessageDecorator[Message]) MessageHandler[Message] {
+	n := len(middlewares)
+	for i := n - 1; 0 <= i; i-- {
+		decorator := middlewares[i]
+		handler = decorator(handler)
+	}
+	return handler
+}
+
+//
+
+func NewMessageMux[Subject constraints.Ordered, Message any](getSubject func(Message) (Subject, error)) *MessageMux[Subject, Message] {
+	return &MessageMux[Subject, Message]{
+		getSubject:  getSubject,
+		handlers:    make(map[Subject]MessageHandler[Message]),
+		middlewares: make([]MessageDecorator[Message], 0),
 	}
 }
 
-type MessageMux[P constraints.Ordered, Message any] struct {
+type MessageMux[Subject constraints.Ordered, Message any] struct {
 	mu sync.RWMutex
 
-	// getPattern 是為了避免 generic type 呼叫 method 所造成的效能降低
-	// 所以 Message type constraint 使用 any, 而沒有定義 GetPattern method
+	// getSubject 是為了避免 generic type 呼叫 method 所造成的效能降低
+	// 同時可以因應不同情境, 改變取得 subject 的規則
 	//
 	// https://www.youtube.com/watch?v=D1hI55EcBB4&t=20260s
 	//
 	// https://hackmd.io/@fieliapm/BkHvJjYq3#/5/2
-	getPattern       func(Message) (P, error)
-	handlerByPattern map[P]MessageFunc[Message]
-	chainByGlobal    MessageChain[Message]
+	getSubject  func(Message) (Subject, error)
+	handlers    map[Subject]MessageHandler[Message]
+	middlewares []MessageDecorator[Message]
 
-	notFoundHandler MessageFunc[Message]
+	notFoundHandler MessageHandler[Message]
 }
 
-func (mux *MessageMux[P, Message]) serve(dto Message) error {
-	pattern, err := mux.getPattern(dto)
+func (mux *MessageMux[Subject, Message]) handle(dto Message) error {
+	subject, err := mux.getSubject(dto)
 	if err != nil {
 		return err
 	}
 
-	fn, ok := mux.handlerByPattern[pattern]
+	fn, ok := mux.handlers[subject]
 	if !ok {
 		if mux.notFoundHandler == nil {
 			return ErrNotFoundHandler
 		}
 		return mux.notFoundHandler(dto)
 	}
-	return mux.chainByGlobal.Link(fn)(dto)
+	return LinkMiddlewares(fn)(dto)
 }
 
-// ServeWithoutMutex is a method of the MessageMux type that allows for serving a Message directly, without acquiring a read lock.
-// It calls the serve method internally to handle the Message.
-func (mux *MessageMux[P, Message]) ServeWithoutMutex(dto Message) error {
-	return mux.serve(dto)
+func (mux *MessageMux[Subject, Message]) Subjects() (result []Subject) {
+	for subject := range mux.handlers {
+		result = append(result, subject)
+	}
+	return
 }
 
-func (mux *MessageMux[P, Message]) Serve(dto Message) error {
+func (mux *MessageMux[Subject, Message]) HandleMessageWithoutMutex(dto Message) error {
+	return mux.handle(dto)
+}
+
+func (mux *MessageMux[Subject, Message]) HandleMessage(dto Message) error {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
-	return mux.serve(dto)
+	return mux.handle(dto)
 }
 
-func (mux *MessageMux[P, Message]) RegisterFunc(pattern P, fn MessageFunc[Message]) *MessageMux[P, Message] {
+func (mux *MessageMux[Subject, Message]) RegisterHandler(subject Subject, fn MessageHandler[Message]) *MessageMux[Subject, Message] {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
 
-	_, ok := mux.handlerByPattern[pattern]
+	_, ok := mux.handlers[subject]
 	if ok {
-		panic(fmt.Sprintf("mux have duplicate pattern=%v", pattern))
+		panic(fmt.Sprintf("mux have duplicate subject=%v", subject))
 	}
 
-	mux.handlerByPattern[pattern] = fn
+	mux.handlers[subject] = fn
 	return mux
 }
 
-func (mux *MessageMux[P, Message]) RemoveFunc(pattern P) {
+func (mux *MessageMux[Subject, Message]) RemoveHandler(subject Subject) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
-	delete(mux.handlerByPattern, pattern)
+	delete(mux.handlers, subject)
 }
 
-func (mux *MessageMux[P, Message]) AddMiddleware(middlewares ...MessageDecorator[Message]) *MessageMux[P, Message] {
+func (mux *MessageMux[Subject, Message]) AddMiddleware(middlewares ...MessageDecorator[Message]) *MessageMux[Subject, Message] {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
-	mux.chainByGlobal.AddChain(middlewares...)
+	mux.middlewares = append(mux.middlewares, middlewares...)
 	return mux
 }
 
-func (mux *MessageMux[P, Message]) SetNotFoundHandler(fn MessageFunc[Message]) *MessageMux[P, Message] {
+func (mux *MessageMux[Subject, Message]) SetNotFoundHandler(fn MessageHandler[Message]) *MessageMux[Subject, Message] {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
 	mux.notFoundHandler = fn

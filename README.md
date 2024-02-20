@@ -2,11 +2,11 @@
 
 mux 通常是指一個 路由器（router）或 多路徑匹配器（multiplexer），它可以用來處理不同的訊息。
 
-利用字串的弱引用特性，將 pattern 和 handler 榜定。
+利用字串的弱引用特性，將 subject 和 handler 榜定。
 
-所謂 pattern 在不同的介接系統，有不同的呈現方式，  
+所謂 subject 在不同的介接系統，有不同的呈現方式，  
 比如：http.url、redis.channel、rabbitmq.routingKey、kafka.topic，  
-最後 pattern 會路由到相應的處理程序（handler）。  
+最後 subject 會路由到相應的處理程序（handler）。  
 
 ## uml 
 
@@ -43,11 +43,11 @@ classDiagram
     }
 
     class MessageMux {
-        - get_pattern(Message): Pattern
+        - get_subject(Message): Subject
         + handle_message(Message): void
     }
 
-    class Pattern {
+    class Subject {
         <<datatype>>
         http.url + http.method
         redis.channel
@@ -73,15 +73,15 @@ classDiagram
         + consume(KafkaSubscribedMessage): void
     }
 
-    MessageMux "1" *-- "0..n" Pattern: register_handler \n remove_handler
+    MessageMux "1" *-- "0..n" Subject: register_handler \n remove_handler
     MessageMux "1" *-- "0..n" MessageHandler: register_handler
     MessageMux ..|> MessageHandler
     MessageMux "1" *-- "0..n" MessageDecorator: add_middleware
     MessageMux "1" ..> "1..n" Message: handle_message
     MessageDecorator "1" ..> "1" MessageHandler: wrap
     MessageHandler "1" ..> "1" Message: handle
-    Message "1" -- "1..n" Pattern: get pattern from message
-    Pattern "1" .. "1" MessageHandler: weak bind by register_handler
+    Message "1" -- "1..n" Subject: get Subject from message
+    Subject "1" .. "1" MessageHandler: weak bind by register_handler
     RedisPublishedMux --|> MessageMux
     RedisProducer o-- RedisPublishedMux
     RedisProducer ..> RedisPublishedMessage: produce
@@ -94,7 +94,7 @@ classDiagram
 
 ## mux 使用步驟
 
-1. define get_pattern function
+1. define get_Subject function
 2. new mux 
 3. add_middleware (option)
 4. register_handler
@@ -125,12 +125,12 @@ def redis_middleware2(next: MessageHandler) -> MessageHandler:
     return middleware
 
 if __name__ == '__main__':
-    # 1. define get_pattern function
-    def get_pattern(dto):
+    # 1. define get_subject function
+    def get_subject(dto):
         return f'v1/{dto.channel}'
 
     # 2. new mux
-    redis_mux = MessageMux(get_pattern=get_pattern)
+    redis_mux = MessageMux(get_subject=get_subject)
 
     # 3. add_middleware (option)
     redis_mux.add_middleware(redis_middleware1, redis_middleware2)
@@ -150,6 +150,6 @@ if __name__ == '__main__':
 
     message2 = RedisMessage("Registered.User", {"user_id": "uuid_v4"})
     redis_mux.handle_message(message2)
-    #     raise NotFoundError(f"pattern={pattern} does not exist in mux")
-    # __main__.NotFoundError: pattern=v1/Registered.User does not exist in mux
+    #     raise NotFoundError(f"subject={subject} does not exist in mux")
+    # __main__.NotFoundError: subject=v1/Registered.User does not exist in mux
 ```
