@@ -179,3 +179,47 @@ func (l stdLogger) WithMessageId(msgId string) Logger {
 	l2.msgId = msgId
 	return l2
 }
+
+//
+
+func SilentLogger() Logger {
+	return silentLogger{}
+}
+
+type silentLogger struct{}
+
+func (silentLogger) Debug(format string, a ...interface{}) {
+	return
+}
+
+func (silentLogger) Info(format string, a ...interface{}) {
+	return
+}
+
+func (silentLogger) Warn(format string, a ...interface{}) {
+	return
+}
+
+func (silentLogger) Error(format string, a ...interface{}) {
+	return
+}
+
+func (silentLogger) Fatal(format string, a ...interface{}) {
+	return
+}
+
+func (l silentLogger) ShallowCopy() Logger {
+	return l
+}
+
+func (silentLogger) SetLogLevel(level LogLevel) {
+	return
+}
+
+func (l silentLogger) WithCallDepth(externalDepth uint) Logger {
+	return l
+}
+
+func (l silentLogger) WithMessageId(msgId string) Logger {
+	return l
+}

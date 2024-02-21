@@ -30,6 +30,9 @@ func NewMessageMux[Subject constraints.Ordered, Message any](getSubject func(Mes
 	}
 }
 
+// MessageMux
+// Message 代表一種高階抽象
+// 內容有 header(metadata) + body
 type MessageMux[Subject constraints.Ordered, Message any] struct {
 	mu sync.RWMutex
 
