@@ -95,6 +95,14 @@ func (mux *MessageMux[Subject, Message]) RegisterHandler(subject Subject, fn Mes
 	return mux
 }
 
+func (mux *MessageMux[Subject, Message]) ReRegisterHandler(subject Subject, fn MessageHandler[Message]) *MessageMux[Subject, Message] {
+	mux.mu.Lock()
+	defer mux.mu.Unlock()
+
+	mux.handlers[subject] = fn
+	return mux
+}
+
 func (mux *MessageMux[Subject, Message]) RemoveHandler(subject Subject) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
