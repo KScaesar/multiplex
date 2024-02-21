@@ -11,16 +11,16 @@ func TestMessageMux_handle(t *testing.T) {
 	// arrange
 	type redisMessage struct {
 		ctx     context.Context
-		body []byte
+		body    []byte
 		channel string
 	}
 	recorder := &bytes.Buffer{}
 
-	mux := NewMessageMux(func(message *redisMessage) (string, error) {
+	getSubject := func(message *redisMessage) (string, error) {
 		return message.channel, nil
-	})
+	}
 
-	mux.
+	mux := NewMessageMux(getSubject).
 		RegisterHandler("hello", func(dto *redisMessage) error {
 			fmt.Fprintf(recorder, "topic=%v, payload=%v", dto.channel, string(dto.body))
 			return nil
@@ -36,7 +36,7 @@ func TestMessageMux_handle(t *testing.T) {
 	// action
 	dto := &redisMessage{
 		ctx:     context.Background(),
-		body: []byte(`{"data":"world"}`),
+		body:    []byte(`{"data":"world"}`),
 		channel: "hello",
 	}
 	err := mux.handle(dto)

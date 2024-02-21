@@ -30,9 +30,10 @@ func NewMessageMux[Subject constraints.Ordered, Message any](getSubject func(Mes
 	}
 }
 
-// MessageMux
-// Message 代表一種高階抽象
-// 內容有 header(metadata) + body
+// MessageMux refers to a router or multiplexer, which can be used to handle different message.
+// Itself is also a MessageHandler, but with added routing capabilities.
+//
+// Message represents a high-level abstraction data structure containing metadata (e.g. header) + body
 type MessageMux[Subject constraints.Ordered, Message any] struct {
 	mu sync.RWMutex
 

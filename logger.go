@@ -19,11 +19,11 @@ const (
 	LogLevelFatal
 )
 
-func MapLogLevel(level LogLevel) string {
-	return levelMapper[level]
+func LookupLogLevel(level LogLevel) string {
+	return level_to_name[level]
 }
 
-var levelMapper = map[LogLevel]string{
+var level_to_name = map[LogLevel]string{
 	LogLevelDebug: "debug",
 	LogLevelInfo:  "info",
 	LogLevelWarn:  "warn",
@@ -40,14 +40,14 @@ type Logger interface {
 	Error(format string, a ...interface{})
 	Fatal(format string, a ...interface{})
 
-	ShallowCopy() Logger
+	Copy() Logger
 	SetLogLevel(level LogLevel)
 	WithCallDepth(externalDepth uint) Logger
 	WithMessageId(msgId string) Logger
 }
 
 var (
-	defaultLogger Logger = NewLogger(0, LogLevelDebug)
+	defaultLogger Logger = NewLogger(true, LogLevelDebug)
 )
 
 func SetDefaultLogger(l Logger) {
@@ -58,17 +58,29 @@ func DefaultLogger() Logger {
 	return defaultLogger
 }
 
-func NewLogger(externalDepth uint, level LogLevel) stdLogger {
-	flag := log.Ltime | log.LUTC | log.Lmsgprefix | log.Lshortfile
+func NewLogger(printPath bool, level LogLevel) Logger {
+	flag := log.Lmsgprefix | log.LstdFlags
+
+	if printPath {
+		flag |= log.Llongfile
+	}
+
 	internalDepth := 2
+
+	contextKey := []string{
+		"msg_id",
+	}
 	return stdLogger{
-		debug:             log.New(os.Stdout, "[Debug]: ", flag),
-		info:              log.New(os.Stdout, "[Info]: ", flag),
-		warn:              log.New(os.Stdout, "[Warn]: ", flag),
-		err:               log.New(os.Stdout, "[Error]: ", flag),
-		fatal:             log.New(os.Stdout, "[Fatal]: ", flag),
-		internalCallDepth: internalDepth + int(externalDepth),
+		debug:             log.New(os.Stdout, "[Debug] ", flag),
+		info:              log.New(os.Stdout, " [Info] ", flag),
+		warn:              log.New(os.Stdout, " [Warn] ", flag),
+		err:               log.New(os.Stdout, "[Error] ", flag),
+		fatal:             log.New(os.Stdout, "[Fatal] ", flag),
+		internalCallDepth: internalDepth,
 		logLevel:          &level,
+
+		contextKey:  contextKey,
+		contextInfo: newContextInfo(),
 	}
 }
 
@@ -81,7 +93,8 @@ type stdLogger struct {
 	internalCallDepth int
 	logLevel          *LogLevel
 
-	msgId string
+	contextKey  []string
+	contextInfo contextInfo
 }
 
 func (l stdLogger) Debug(format string, a ...interface{}) {
@@ -125,22 +138,9 @@ func (l stdLogger) Fatal(format string, a ...interface{}) {
 	os.Exit(1)
 }
 
-func (l stdLogger) ShallowCopy() Logger {
-	return l.shallowCopy()
-}
-
-// shallowCopy 每次加上新的欄位, 要記得修改 shallowCopy 內部實現方式
-func (l stdLogger) shallowCopy() stdLogger {
-	return stdLogger{
-		debug:             l.debug,
-		info:              l.info,
-		warn:              l.warn,
-		err:               l.err,
-		fatal:             l.fatal,
-		internalCallDepth: l.internalCallDepth,
-		logLevel:          l.logLevel,
-		msgId:             l.msgId,
-	}
+func (l stdLogger) Copy() Logger {
+	l.contextInfo = l.contextInfo.copy()
+	return l
 }
 
 func (l stdLogger) SetLogLevel(level LogLevel) {
@@ -152,17 +152,22 @@ func (l stdLogger) LogLevel() LogLevel {
 }
 
 func (l stdLogger) WithCallDepth(externalDepth uint) Logger {
-	l2 := l.shallowCopy()
-	l2.internalCallDepth += int(externalDepth)
-	return l2
+	l.internalCallDepth += int(externalDepth)
+	return l
 }
 
 func (l stdLogger) processPreformat(format string) string {
 	b := strings.Builder{}
 
-	if l.msgId != "" {
-		b.WriteString("msg_id=")
-		b.WriteString(l.msgId)
+	for _, key := range l.contextKey {
+		value := l.contextInfo.get(key)
+		if value == "" {
+			continue
+		}
+
+		b.WriteString(key)
+		b.WriteString("=")
+		b.WriteString(value)
 		b.WriteString(" ")
 	}
 
@@ -175,9 +180,45 @@ func (l stdLogger) WithMessageId(msgId string) Logger {
 		return l
 	}
 
-	l2 := l.shallowCopy()
-	l2.msgId = msgId
-	return l2
+	l.contextInfo = l.contextInfo.copyAndSet("msg_id", msgId)
+	return l
+}
+
+//
+
+func newContextInfo() map[string]string {
+	return make(map[string]string)
+}
+
+type contextInfo map[string]string
+
+func (ctx contextInfo) copy() contextInfo {
+	source := ctx
+
+	size := len(source)
+	if size == 0 {
+		return source
+	}
+
+	target := make(map[string]string, size)
+	for key, v := range source {
+		target[key] = v
+	}
+	return target
+}
+
+func (ctx contextInfo) set(key, v string) {
+	ctx[key] = v
+}
+
+func (ctx contextInfo) copyAndSet(key, v string) contextInfo {
+	target := ctx.copy()
+	target.set(key, v)
+	return target
+}
+
+func (ctx contextInfo) get(key string) string {
+	return ctx[key]
 }
 
 //
@@ -208,7 +249,7 @@ func (silentLogger) Fatal(format string, a ...interface{}) {
 	return
 }
 
-func (l silentLogger) ShallowCopy() Logger {
+func (l silentLogger) Copy() Logger {
 	return l
 }
 

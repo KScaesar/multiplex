@@ -1,6 +1,8 @@
 # multiplex guide
 
-mux 通常是指一個 路由器（router）或 多路徑匹配器（multiplexer），它可以用來處理不同的訊息。
+mux 通常是指一個 路由器（router）或 多路徑匹配器（multiplexer），它可以用來處理不同的 Message。
+
+Message represents a high-level abstraction containing metadata (e.g. header) + body
 
 利用字串的弱引用特性，將 subject 和 handler 榜定。
 
